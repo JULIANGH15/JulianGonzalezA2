@@ -1,0 +1,619 @@
+---
+title: "Prediccion de KNN"
+author: "JULIAN JAVIER GONZALEZ HERNANDEZ"
+date: "2023-10-08"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Parte 1: Exploracion de datos
+
+
+```{r include=FALSE}
+library (tidyverse)
+library(dplyr)
+library(caret)
+library(class)
+library(gmodels)
+```
+
+```{r}
+
+
+folder <- dirname(rstudioapi :: getSourceEditorContext()$path)
+
+parentFolder <- dirname (folder)
+data_set_dia <-
+  read.csv(paste0(parentFolder,"/diabetes_012_health_indicators_BRFSS2015.csv"))
+```
+Una vez que hayamos cargado nuestra colección de datos, es crucial examinar y evaluar la información que se encuentra en este archivo. En la ilustración siguiente, se presentan las variables junto con una breve descripción de su contenido.
+
+Luego, empleando la función psych, podemos obtener un análisis estadístico de las 22 variables presentes en el conjunto de datos, abarcando medidas como la media, desviación estándar, rango mínimo y máximo, entre otros.
+```{r ,include=FALSE}
+library(psych)
+psych::describe(data_set_dia,fast = TRUE)
+```
+
+Por último, al emplear la función mutar, procederemos a modificar todos los datos que no sean "= 0" en la variable Diabetes_012. Después, exhibiremos en una tabla concisa la cantidad de datos clasificados como "0" o "1" en esta variable de nuestro conjunto de datos.
+
+```{r }
+test_diabetes<- data_set_dia %>% mutate(Diabetes_012 = ifelse(Diabetes_012!= "0", "1",Diabetes_012))
+```
+
+```{r,include=FALSE}
+Conteo_Diabetes<- table(test_diabetes$Diabetes_012)
+```
+
+```{r}
+Conteo_Diabetes
+
+```
+
+
+## Parte 2: KNN PREDICCIÓN DE DIABETES KNN
+
+#### Primera predicción
+
+En esta sección del documento, implementaremos el método predictivo KNN. Para ello, emplearemos tres variables distintas para realizar las predicciones. Inicialmente, mediante un muestreo estratificado, seleccionaremos alrededor del 1% de los datos para el entrenamiento de nuestros modelos.
+
+```{r}
+Sample_diabetes <- test_diabetes %>%
+  group_by(Diabetes_012) %>%
+  sample_n(1269, replace = TRUE) %>%
+  ungroup()
+```
+
+```{r,include=FALSE}
+Conteo_Sample_diabetes<- table(Sample_diabetes$Diabetes_012)
+```
+
+```{r}
+Conteo_Sample_diabetes
+```
+
+```{r}
+set.seed(123)  
+Sample_diabetes_knn <- Sample_diabetes %>%
+  group_by(Diabetes_012) %>%
+  sample_n(1269, replace = TRUE) %>%
+  ungroup()
+
+
+S.index <- sample(1:nrow(Sample_diabetes_knn)
+                       ,nrow(Sample_diabetes_knn)*0.7
+                       ,replace = F)
+
+
+predictors <- c("HighBP", "HighChol", "CholCheck", "BMI", "Smoker", "Stroke", "HeartDiseaseorAttack", "PhysActivity", "Fruits", "Veggies", "HvyAlcoholConsump", "AnyHealthcare", "NoDocbcCost", "GenHlth", "MentHlth", "PhysHlth", "DiffWalk", "Sex", "Age", "Education", "Income")
+
+TR.Data <- Sample_diabetes_knn[S.index, c(predictors, "Diabetes_012"), drop = FALSE]
+TS.data <- Sample_diabetes_knn[-S.index, c(predictors, "Diabetes_012"), drop = FALSE]
+
+
+TR.Data$Diabetes_012 <- factor(TR.Data$Diabetes_012)
+TS.data$Diabetes_012 <- factor(TS.data$Diabetes_012)
+
+```
+
+```{r}
+
+ctrl <- trainControl(method = "cv", p = 0.7)
+knnFit <- train(Diabetes_012 ~ .
+                , data = TR.Data
+                , method = "knn", trControl = ctrl
+                , preProcess = c("range") # c("center", "scale") for z-score
+                , tuneLength = 50)
+
+plot(knnFit)
+
+
+```
+
+```{r, results= FALSE}
+# Hacer predicciones
+knnPredict <- predict(knnFit, newdata = TS.data)
+
+# Crea la matriiz de confusion
+confusionMatrix(data = knnPredict, reference = TS.data$Diabetes_012)
+```
+
+```{r echo= FALSE}
+# Hacer predicciones
+knnPredict <- predict(knnFit, newdata = TS.data)
+
+# Crea la matriiz de confusion
+confusionMatrix(data = knnPredict, reference = TS.data$Diabetes_012)
+```
+
+#### Segunda prediccion
+
+```{r}
+predictors_to_remove <- c("AnyHealthcare", "NoDocbcCost", "DiffWalk", "Education", "Income")
+TR.Data2 <- TR.Data[, !(names(TR.Data) %in% predictors_to_remove)]
+TS.data2 <- TS.data[, !(names(TS.data) %in% predictors_to_remove)]
+
+
+ctrl <- trainControl(method = "cv", number = 5)
+knnFit2 <- train(Diabetes_012 ~ .
+                 , data = TR.Data2
+                 , method = "knn", trControl = ctrl
+                 , preProcess = c("range") # c("center", "scale") for z-score
+                 , tuneLength = 20)
+
+plot(knnFit2)
+```
+
+```{r}
+# crea predicciones
+knnPredict2 <- predict(knnFit2, newdata = TS.data2)
+
+# Crea la matriiz de confusion
+confusionMatrix(data = knnPredict2, reference = TS.data2$Diabetes_012)
+```
+
+#### Tercera prediccion
+
+```{r}
+predictors_to_remove2 <- c("ChoclCheck", "MentHlth","PhysHlth", "Fruits", "Veggies")
+TR.Data3 <- TR.Data2[, !(names(TR.Data2) %in% predictors_to_remove2)]
+TS.data3 <- TS.data2[, !(names(TS.data2) %in% predictors_to_remove2)]
+
+ctrl2 <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+knnFit3 <- train(Diabetes_012 ~ .
+                 , data = TR.Data3
+                 , method = "knn", trControl = ctrl2
+                 , preProcess = c("range") # c("center", "scale") for z-score
+                 , tuneLength = 20)
+
+plot(knnFit3)
+```
+
+```{r}
+knnPredict3 <- predict(knnFit3, newdata = TS.data3)
+
+# Crea la matriiz de confusion
+confusionMatrix(data = knnPredict3, reference = TS.data3$Diabetes_012)
+```
+
+### KNN HeartDiseaseorAttack Prediction
+
+#### Primera prediccion
+
+```{r results=FALSE}
+
+set.seed(123)
+ss_heartDiseaseorAttack <- Sample_diabetes %>%
+  group_by(HeartDiseaseorAttack) %>%
+  sample_n(1269, replace = TRUE) %>%
+  ungroup()
+
+predictors <- c("Diabetes_012","HighBP", "HighChol", "CholCheck", "BMI", "Smoker", "Stroke",  "PhysActivity", "Fruits", "Veggies", "HvyAlcoholConsump", "AnyHealthcare", "NoDocbcCost", "GenHlth", "MentHlth", "PhysHlth", "DiffWalk", "Sex", "Age", "Education", "Income")
+
+# Datos originales
+TR.Data <- ss_heartDiseaseorAttack[S.index, c(predictors, "HeartDiseaseorAttack"), drop = FALSE]
+TS.data <- ss_heartDiseaseorAttack[-S.index, c(predictors, "HeartDiseaseorAttack"), drop = FALSE]
+
+TR.Data$HeartDiseaseorAttack <- factor(TR.Data$HeartDiseaseorAttack)
+TS.data$HeartDiseaseorAttack <- factor(TS.data$HeartDiseaseorAttack)
+
+# Entrena el modelo KNN
+ctrl <- trainControl(method = "cv", p = 0.7)
+knnFit <- train(HeartDiseaseorAttack ~ .
+                , data = TR.Data
+                , method = "knn", trControl = ctrl
+                , preProcess = c("range") # c("center", "scale") for z-score
+                , tuneLength = 50)
+
+# Crear predicciones
+knnPredict <- predict(knnFit, newdata = TS.data)
+
+# Crea la matriiz de confusion
+# Datos originales
+TR.Data <- ss_heartDiseaseorAttack[S.index, c(predictors, "HeartDiseaseorAttack"), drop = FALSE]
+TS.data <- ss_heartDiseaseorAttack[-S.index, c(predictors, "HeartDiseaseorAttack"), drop = FALSE]
+
+TR.Data$HeartDiseaseorAttack <- factor(TR.Data$HeartDiseaseorAttack)
+TS.data$HeartDiseaseorAttack <- factor(TS.data$HeartDiseaseorAttack)
+
+# Entrena el modelo KNN
+ctrl <- trainControl(method = "cv", p = 0.7)
+knnFit <- train(HeartDiseaseorAttack ~ .
+                , data = TR.Data
+                , method = "knn", trControl = ctrl
+                , preProcess = c("range") # c("center", "scale") for z-score
+                , tuneLength = 50)
+
+# crear predicciones
+knnPredict <- predict(knnFit, newdata = TS.data)
+
+# Crea la matriiz de confusion
+confusionMatrix(data = knnPredict, reference = TS.data$HeartDiseaseorAttack)
+
+
+
+```
+
+#### Segunda prediccion
+
+```{r results= FALSE}
+### Segundo modelo
+
+predictors_to_remove <- c("AnyHealthcare", "NoDocbcCost", "DiffWalk", "Education", "Income")
+TR.Data2 <- TR.Data[, !(names(TR.Data) %in% predictors_to_remove)]
+TS.data2 <- TS.data[, !(names(TS.data) %in% predictors_to_remove)]
+
+# Entrena el modelo KNN
+ctrl <- trainControl(method = "cv", number = 5)
+knnFit2 <- train(HeartDiseaseorAttack ~ .
+                 , data = TR.Data2
+                 , method = "knn", trControl = ctrl
+                 , preProcess = c("range") # c("center", "scale") for z-score
+                 , tuneLength = 50)
+
+
+# crear predicciones
+knnPredict2 <- predict(knnFit2, newdata = TS.data2)
+
+#Crea la matriiz de confusion
+confusionMatrix(data = knnPredict2, reference = TS.data2$HeartDiseaseorAttack)
+```
+
+#### Tercera prediccion
+
+```{r results=FALSE}
+### Tercer Modelo
+
+predictors_to_remove2 <- c("ChoclCheck", "MentHlth","HvyAlcoholConsump", "Fruits", "Veggies")
+TR.Data3 <- TR.Data2[, !(names(TR.Data2) %in% predictors_to_remove2)]
+TS.data3 <- TS.data2[, !(names(TS.data2) %in% predictors_to_remove2)]
+
+# Entrena el modelo KNN
+ctrl2 <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+knnFit3 <- train(HeartDiseaseorAttack ~ .
+                 , data = TR.Data3
+                 , method = "knn", trControl = ctrl2
+                 , preProcess = c("range") # c("center", "scale") for z-score
+                 , tuneLength = 50)
+
+
+# Crear predicciones
+knnPredict3 <- predict(knnFit3, newdata = TS.data3)
+
+# Crea la matriiz de confusion
+confusionMatrix(data = knnPredict3, reference = TS.data3$HeartDiseaseorAttack)
+```
+
+## KNN Encuentra predicción de sexo
+
+#### Primera predicción
+
+```{r results=FALSE}
+### Modelos y experimentos de KNN para encontrar sexo #####################################################################
+
+
+
+## selección de 1500 muestras de cada factor del conjunto de datos#
+set.seed(123)
+ss_sex <- Sample_diabetes %>%
+  group_by(Sex) %>%
+  sample_n(1269, replace = TRUE) %>%
+  ungroup()
+
+predictors <- c("Diabetes_012","HighBP", "HighChol", "CholCheck", "BMI", "Smoker", "Stroke", "HeartDiseaseorAttack" , "PhysActivity", "Fruits", "Veggies", "HvyAlcoholConsump", "AnyHealthcare", "NoDocbcCost", "GenHlth", "MentHlth", "PhysHlth", "DiffWalk", "Age", "Education", "Income")
+
+# Datos Originales
+TR.Data <- ss_sex[S.index, c(predictors, "Sex"), drop = FALSE]
+TS.data <- ss_sex[-S.index, c(predictors, "Sex"), drop = FALSE]
+
+TR.Data$Sex <- factor(TR.Data$Sex)
+TS.data$Sex <- factor(TS.data$Sex)
+
+# Entrena el modelo KNN
+ctrl <- trainControl(method = "cv", p = 0.7)
+knnFit <- train(Sex ~ .
+                , data = TR.Data
+                , method = "knn", trControl = ctrl
+                , preProcess = c("range") # c("center", "scale") for z-score
+                , tuneLength = 50)
+
+
+# Crear predicciones
+knnPredict <- predict(knnFit, newdata = TS.data)
+
+#Crea la matriiz de confusion
+confusionMatrix(data = knnPredict, reference = TS.data$Sex)
+```
+
+
+#### Segunda predicción
+
+```{r results=FALSE}
+
+# Segundo modelo
+
+predictors_to_remove <- c("AnyHealthcare", "NoDocbcCost", "DiffWalk", "Age", "PhysActivity")
+TR.Data2 <- TR.Data[, !(names(TR.Data) %in% predictors_to_remove)]
+TS.data2 <- TS.data[, !(names(TS.data) %in% predictors_to_remove)]
+
+# Entrena el modelo KNN
+ctrl <- trainControl(method = "cv", number = 5)
+knnFit2 <- train(Sex ~ .
+                 , data = TR.Data2
+                 , method = "knn", trControl = ctrl
+                 , preProcess = c("range") # c("center", "scale") for z-score
+                 , tuneLength = 50)
+
+#Crear predicciones
+knnPredict2 <- predict(knnFit2, newdata = TS.data2)
+
+# Crea la matriiz de confusion
+  confusionMatrix(data = knnPredict2, reference = TS.data2$Sex)
+```
+
+#### Tercera predicción
+```{r results=FALSE}
+### Tercer modelo
+
+predictors_to_remove2 <- c("ChoclCheck", "MentHlth","HvyAlcoholConsump", "Fruits", "Veggies")
+TR.Data3 <- TR.Data2[, !(names(TR.Data2) %in% predictors_to_remove2)]
+TS.data3 <- TS.data2[, !(names(TS.data2) %in% predictors_to_remove2)]
+
+# Entrena el modelo KNN
+ctrl2 <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+knnFit3 <- train(Sex ~ .
+                 , data = TR.Data3
+                 , method = "knn", trControl = ctrl2
+                 , preProcess = c("range") # c("center", "scale") for z-score
+                 , tuneLength = 50)
+
+
+#Crear predicciones
+knnPredict3 <- predict(knnFit3, newdata = TS.data3)
+
+#  Crea la matriiz de confusion
+confusionMatrix(data = knnPredict3, reference = TS.data3$Sex)
+```
+
+
+## Parte 3: Modelo de regresión lineal BM
+
+#### Primera predicción
+
+```{r}
+### Modelo de regresión lineal BMI #####################################################################################
+folder <- dirname(rstudioapi :: getSourceEditorContext()$path)
+
+parentFolder <- dirname (folder)
+data <-
+  read.csv(paste0(parentFolder,"/diabetes_012_health_indicators_BRFSS2015.csv"))
+
+data$Diabetes_012 <- ifelse(data$Diabetes_012 == 0, 0, 1)
+
+set.seed(1)
+data_estratificada2 <- data[sample(nrow(data), 3000), ]
+
+predictors <- colnames(data_estratificada2)[-5]
+S.index <- sample(1:nrow(data_estratificada2),
+                       nrow(data_estratificada2) * 0.7,
+                       replace = FALSE)
+
+
+TR.Data <- data_estratificada2[S.index, c(predictors, "BMI"), drop = FALSE]
+TS.data <- data_estratificada2[-S.index, c(predictors, "BMI"), drop = FALSE]
+
+ins_model <- lm(BMI ~ ., data = TR.Data)
+
+summary(ins_model)
+
+
+# Entrenar el modelo
+train.control <- trainControl(method = "cv", number = 10 )
+model <- train(BMI ~ ., data = TR.Data, method = "lm",
+               trControl = train.control)
+
+
+# Resumir los resultados
+print(model)
+```
+
+#### Segunda predicción
+
+```{r results=FALSE}
+#### segunda
+
+predictors_to_remove <- c("AnyHealthcare", "CholCheck", "MentHlth", "Education", "Sex")
+
+TR.Data2 <- TR.Data[, !(names(TR.Data) %in% predictors_to_remove)]
+TS.data2 <- TS.data[, !(names(TS.data) %in% predictors_to_remove)]
+
+ins_model <- lm(BMI ~ ., data = TR.Data2)
+
+summary(ins_model)
+
+# Entrenar el modelo
+train.control <- trainControl(method = "cv", number = 5)
+model <- train(BMI ~ ., data = TR.Data2, method = "lm",
+               trControl = train.control)
+
+# Resumir los resultados
+print(model)
+```
+
+#### Tercera predicción
+
+```{r results=FALSE}
+
+#### Tercera
+predictors_to_remove <- c("Income", "Stroke", "NoDocbcCost", "Veggies", "HvyAlcoholConsump")
+
+TR.Data3 <- TR.Data2[, !(names(TR.Data2) %in% predictors_to_remove)]
+TS.data3 <- TS.data2[, !(names(TS.data2) %in% predictors_to_remove)]
+
+ins_model <- lm(BMI ~ ., data = TR.Data3)
+
+summary(ins_model)
+
+# Entrenar el Modelo
+train.control <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+model <- train(BMI ~ ., data = TR.Data3, method = "lm",
+               trControl = train.control)
+# Resumir los resultados
+print(model)
+```
+
+## Modelo de regresión lineal MentHlth
+
+#### Primera predicción
+```{r results=FALSE }
+
+### Modelo de regresión lineal MentHlth #####################################################################################
+
+set.seed(1)
+data_estratificada2 <- data[sample(nrow(data), 3000), ]
+
+predictors <- colnames(data_estratificada2)[-16]
+S.index <- sample(1:nrow(data_estratificada2),
+                       nrow(data_estratificada2) * 0.7,
+                       replace = FALSE)
+
+### ENTRENAMIENTO
+TR.Data <- data_estratificada2[S.index, c(predictors, "MentHlth"), drop = FALSE]
+TS.data <- data_estratificada2[-S.index, c(predictors, "MentHlth"), drop = FALSE]
+
+ins_model <- lm(MentHlth ~ ., data = TR.Data)
+summary(ins_model)
+
+# Entrenar el modelo
+train.control <- trainControl(method = "cv", number = 10 )
+model <- train(MentHlth ~ ., data = TR.Data, method = "lm",
+               trControl = train.control)
+
+# Resumir los resultados
+print(model)
+```
+
+#### Segunda predicción
+
+```{r results=FALSE }
+
+#### Segunda 
+
+predictors_to_remove <- c("BMI", "HeartDiseaseorAttack", "Stroke", "PhysActivity", "CholCheck")
+
+TR.Data2 <- TR.Data[, !(names(TR.Data) %in% predictors_to_remove)]
+TS.data2 <- TS.data[, !(names(TS.data) %in% predictors_to_remove)]
+
+ins_model <- lm(MentHlth ~ ., data = TR.Data2)
+summary(ins_model)
+
+# Entrenar el modelo
+train.control <- trainControl(method = "cv", number = 5)
+model <- train(MentHlth ~ ., data = TR.Data2, method = "lm",
+               trControl = train.control)
+
+
+# Resumir los resultados
+print(model)
+```
+
+
+#### Tercera predicción
+
+```{r results=FALSE}
+
+#### Tercera
+predictors_to_remove <- c("Diabetes_012", "HighBP", "HighChol", "Veggies", "Education")
+
+TR.Data3 <- TR.Data2[, !(names(TR.Data2) %in% predictors_to_remove)]
+TS.data3 <- TS.data2[, !(names(TS.data2) %in% predictors_to_remove)]
+
+ins_model <- lm(MentHlth ~ ., data = TR.Data3)
+summary(ins_model)
+
+# Entrenar el modelo
+train.control <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+model <- train(MentHlth ~ ., data = TR.Data3, method = "lm",
+               trControl = train.control)
+
+# Resumir los resultados
+print(model)
+```
+
+## Modelo de regresión lineal PhysHlth
+
+#### Primera predicción
+
+```{r results=FALSE}
+#### Modelo de regresión lineal PhysHlth ###################################################################################
+set.seed(1)
+data_estratificada3 <- data[sample(nrow(data), 3000), ]
+
+predictors <- colnames(data_estratificada2)[-17]
+S.index <- sample(1:nrow(data_estratificada3),
+                       nrow(data_estratificada3) * 0.7,
+                       replace = FALSE)
+
+TR.Data <- data_estratificada2[S.index, c(predictors, "PhysHlth"), drop = FALSE]
+TS.data <- data_estratificada2[-S.index, c(predictors, "PhysHlth"), drop = FALSE]
+
+ins_model <- lm(PhysHlth ~ ., data = TR.Data)
+summary(ins_model)
+
+#Entrenar el modelo
+train.control <- trainControl(method = "cv", number = 10 )
+model <- train(PhysHlth ~ ., data = TR.Data, method = "lm",
+               trControl = train.control)
+# # Resumir los resultados
+print(model)
+```
+
+
+#### Segunda predicción
+
+```{r results=FALSE}
+
+#### Segunda 
+
+predictors_to_remove <- c("Sex", "Diabetes_012", "Education", "CholCheck", "Smoker")
+
+TR.Data2 <- TR.Data[, !(names(TR.Data) %in% predictors_to_remove)]
+TS.data2 <- TS.data[, !(names(TS.data) %in% predictors_to_remove)]
+
+ins_model <- lm(PhysHlth ~ ., data = TR.Data2)
+summary(ins_model)
+
+# Entrenar el modelo
+train.control <- trainControl(method = "cv", number = 5)
+model <- train(PhysHlth ~ ., data = TR.Data2, method = "lm",
+               trControl = train.control)
+# Resumir los resultados
+print(model)
+```
+
+#### Tercera predicción
+
+```{r results=FALSE }
+#### Tercera
+
+predictors_to_remove <- c("BMI", "HeartDiseaseorAttack", "PhysActivity", "Veggies", "Stroke")
+
+TR.Data3 <- TR.Data2[, !(names(TR.Data2) %in% predictors_to_remove)]
+TS.data3 <- TS.data2[, !(names(TS.data2) %in% predictors_to_remove)]
+
+ins_model <- lm(PhysHlth ~ ., data = TR.Data3)
+summary(ins_model)
+
+# Entrenar el modelo
+train.control <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+model <- train(PhysHlth ~ ., data = TR.Data3, method = "lm",
+               trControl = train.control)
+# Resumir los resultados
+print(model)
+```
